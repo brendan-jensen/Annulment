@@ -1,0 +1,6 @@
+*.xyz
+*.mol
+*.smi
+__pycache__/
+.idea/*
+.idea
