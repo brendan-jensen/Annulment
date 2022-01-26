@@ -128,11 +128,11 @@ for file in glob.glob("*.xyz"):
     for molecule in pybel.readfile("xyz", file):
         mol_num += 1
         finder = MonoFinder(molecule)
-        for metal in molecule:
-            if metal.OBAtom.IsMetal() and not do_metal_filter:
-                finder.start(metal)
-            elif metal.OBAtom.IsMetal() and metal.atomicnum == metal_filter:
-                finder.start(metal)
+        for metal_atom in molecule:
+            if metal_atom.OBAtom.IsMetal() and not do_metal_filter:
+                finder.start(metal_atom)
+            elif metal_atom.OBAtom.IsMetal() and metal_atom.atomicnum == metal_filter:
+                finder.start(metal_atom)
             else:
                 break
 end_time = time.time()
