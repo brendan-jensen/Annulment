@@ -3,16 +3,19 @@
 """
 
 import os
-import pybel
-import openbabel
+from openbabel import pybel
+from openbabel import openbabel
 
 import HeaderReplacer
 import LigandChargeFinder
 import ChangeCharge
 
 
+dentate_map = {1:"Monodentate", 2:"Bidentate", 3:"Tridentate"}
+atomic_nums_to_elem = {1:"H", 5:"B", 6:"C", 7:"N", 8:"O", 9:"F", 14:"Si", 15:"P", 16:"S", 17:"Cl", 33:"As", 34:"Se", 35:"Br", 53:"I"}
+
 class LigandExtractor:
-    def __init__(self, mol, bond_iter, num_atom):
+    def __init__(self, mol, bond_iter, num_atom, denticity):
         self.mol = mol
         self.bond_iter = bond_iter
         self.num_atom = num_atom
@@ -26,6 +29,9 @@ class LigandExtractor:
         self.set_bond_id()
         self.new_charge = self.modify_charge()
         self.set_bond_id()
+        self.denticity = denticity
+        self.atom_connections = []
+        self.connecting_indices = []
 
     def modify_charge(self):
         for atom in self.mol:
@@ -76,6 +82,16 @@ class LigandExtractor:
             for bond in openbabel.OBAtomBondIter(a):
                 bond.SetId(0)
 
+    def convert_connections(self):
+        self.atom_connections.sort()
+        # iterator = map(lambda num: atomic_nums_to_elem[num], self.atom_connections)
+        output = ""
+        for i in range(len(self.atom_connections)):
+            output += atomic_nums_to_elem[self.atom_connections[i]] 
+            if i < len(self.atom_connections) - 1:
+                output += "-"
+        return output
+
     def find_ligands(self, atom):
         a = atom.OBAtom
         # marking visited atom
@@ -93,6 +109,14 @@ class LigandExtractor:
 
                 if self.mol.atoms[bond.GetNbrAtomIdx(a) - 1].OBAtom.IsMetal():
                     # print("Metal found, skipping...")
+                    # TODO: if this happens then add to list of connection points
+
+                    # if atom is connected to metal AND has not been marked as a metal connection yet
+                    if a.GetId() < 3:
+                        a.SetId(3)
+                        self.atom_connections.append(a.GetAtomicNum())
+                        # print("Atom type: ", a.GetType())
+                    
                     continue
                 else:
                     self.find_ligands(self.mol.atoms[bond.GetNbrAtomIdx(a) - 1])
@@ -119,6 +143,7 @@ class LigandExtractor:
                         self.find_ligands(self.mol.atoms[bond.GetNbrAtomIdx(atom.OBAtom) - 1])
                         # Sets the first atom in the ligand's ID to one so it doesn't get deleted
                         self.mol.atoms[bond.GetNbrAtomIdx(atom.OBAtom) - 1].OBAtom.SetId(3)
+                        self.atom_connections.append(self.mol.atoms[bond.GetNbrAtomIdx(atom.OBAtom) - 1].atomicnum)
 
                         # break
 
@@ -132,10 +157,10 @@ class LigandExtractor:
                     counter += 1
 
         for atom in self.mol:
-            print(atom.OBAtom.GetId())
+            # print(atom.OBAtom.GetId())
             if atom.OBAtom.GetId() < 2:
                 self.mol.OBMol.DeleteAtom(atom.OBAtom)
-                print("Atom removed")
+                # print("Atom removed")
             # if atom.OBAtom.GetId() == 0:
             #     self.mol.OBMol.DeleteAtom(atom.OBAtom)
             #     print("Atom removed")
@@ -145,9 +170,10 @@ class LigandExtractor:
         atom_contact = 0
         for atom in self.mol:
             if atom.OBAtom.GetId() == 3:
-                self.start_index = atom.OBAtom.GetIndex() + 1
-                atom_contact = atom.atomicnum
-                print(atom_contact)
+                # self.start_index = atom.OBAtom.GetIndex() + 1
+                self.connecting_indices.append(atom.OBAtom.GetIndex() + 1)
+                # atom_contact = atom.atomicnum
+                # print(self.start_index)
 
         # This chunk of code sorts the files into folders based on what their charges are - kept here for future
         # testing needs
@@ -179,16 +205,31 @@ class LigandExtractor:
         #     self.mol.write("xyz", f"Charges/Other/{self.type}{self.num_atom}-{self.bond_iter}-After.xyz",
         #                    True)
 
+        # print(self.convert_connections())
+
+        # print(self.connecting_indices)
+        connecting_atoms = self.convert_connections()
 
         print("Writing ligand to file type xyz...")
 
         if not os.path.exists('ExtractedLigand'):
             os.makedirs('ExtractedLigand')
-        if not os.path.exists(f'ExtractedLigand/Elem {atom_contact}'):
-            os.makedirs(f'ExtractedLigand/Elem {atom_contact}')
-        self.mol.write("xyz", f"ExtractedLigand/Elem {atom_contact}/{self.type}{self.num_atom}-{self.bond_iter}.xyz", True)
-        charge_changer = ChangeCharge.ChargeChanger(f"ExtractedLigand/Elem {atom_contact}/{self.type}{self.num_atom}-{self.bond_iter}.xyz")
-        charge_changer.change(self.new_charge)
+
+        if not self.denticity in dentate_map.keys():
+            self.dentate_name = "Tetradentate (or greater)"
+        else:
+            self.dentate_name = dentate_map[self.denticity]
+
+        if not os.path.exists(f'ExtractedLigand/{self.dentate_name}'):
+            os.makedirs(f'ExtractedLigand/{self.dentate_name}')
+        
+        if not os.path.exists(f'ExtractedLigand/{self.dentate_name}/{connecting_atoms}'):
+            os.makedirs(f'ExtractedLigand/{self.dentate_name}/{connecting_atoms}')
+
+
+        # self.mol.write("xyz", f"ExtractedLigand/{self.dentate_name}/{connecting_atoms}/{self.type}{self.num_atom}-{self.bond_iter}.xyz", True)
+        # charge_changer = ChangeCharge.ChargeChanger(f"ExtractedLigand/{self.dentate_name}/{connecting_atoms}/{self.type}{self.num_atom}-{self.bond_iter}.xyz")
+        # charge_changer.change(self.new_charge)
 
         self.mol.OBMol.SetTotalCharge(self.new_charge)
         # TODO Find out how to figure out which atom has the charge, then give it its formal charge using OBAtom.SetFormalCharge()
@@ -203,16 +244,17 @@ class LigandExtractor:
         # if not os.path.exists('UpdatedCharge/mol'):
         #     os.makedirs('UpdatedCharge/mol')
 
-        # file_mol = f"UpdatedCharge/mol/{self.type}{self.num_atom}-{self.bond_iter}.mol"
+        print("Writing ligand to file type mol...")
+        mol_file_path = f"ExtractedLigand/{self.dentate_name}/{connecting_atoms}/{self.type}{self.num_atom}-{self.bond_iter}.mol2"
+
+        self.mol.write("mol2", mol_file_path, True)
+        print("Wrote successfully")
+
         # file_smile = f"UpdatedCharge/smile/{self.type}{self.num_atom}-{self.bond_iter}.smi"
-        # print("Writing ligand to file type mol...")
-        # self.mol.write("mol", file_mol, True)
-        # print("Writing ligand to file type smile...")
         # self.mol.write("smi", file_smile, True)
-        # print("succesfully wrote to file...")
 
         # header_replacer = HeaderReplacer.HeaderReplacer(file_smile)
         # header_replacer.replace_header(self.start_index)
        
-        # header_replacer = HeaderReplacer.HeaderReplacer(file_mol)
-        # header_replacer.replace_header(self.start_index)
+        header_replacer = HeaderReplacer.HeaderReplacer(mol_file_path)
+        header_replacer.replace_header(self.connecting_indices)
