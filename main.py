@@ -4,8 +4,8 @@
 
 import time
 
-import openbabel
-import pybel
+from openbabel import openbabel
+from openbabel import pybel
 import glob
 import re
 import LigandExtract
@@ -65,6 +65,7 @@ class MonoFinder:
         bond_iter = 0
         total_metal_hits = 0
         m = metal.OBAtom
+        ligand_count = 1
         # Loop on each bond attached to the our metal atom
         for bond in openbabel.OBAtomBondIter(m):
             # checking to see if the bond has been visited before
@@ -102,15 +103,16 @@ class MonoFinder:
                 total_metal_hits += self.metal_hit
                 if self.metal_hit == 0:
                     copy_molecule = pybel.Molecule(openbabel.OBMol(self.mol.OBMol))
-                    sub = LigandExtract.LigandExtractor(copy_molecule, bond_iter, mol_num)
+                    sub = LigandExtract.LigandExtractor(copy_molecule, bond_iter, mol_num, 1, m.GetAtomicNum(), ligand_count)
                     sub.extract_ligand()
-                    # return  # This causes the first iteration to be the only iteration.  If we want to do all the monodentates, then remove this.
                 else:
                     print("Attempting to extract polydentate!")
                     copy_molecule = pybel.Molecule(openbabel.OBMol(self.mol.OBMol))
-                    sub = LigandExtract.LigandExtractor(copy_molecule, bond_iter, mol_num)
+                    sub = LigandExtract.LigandExtractor(copy_molecule, bond_iter, mol_num, self.metal_hit+1, m.GetAtomicNum(), ligand_count)
                     sub.extract_ligand()
                     self.metal_hit = 0
+                
+                ligand_count += 1
 
             bond_iter += 1
         print("Total metal hits: ", total_metal_hits)
