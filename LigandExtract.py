@@ -93,12 +93,9 @@ class LigandExtractor:
 
     def convert_connections(self):
         self.atom_connections.sort()
-        # iterator = map(lambda num: atomic_nums_to_elem[num], self.atom_connections)
         output = ""
         for i in range(len(self.atom_connections)):
             output += atomic_nums_to_elem[self.atom_connections[i]] 
-            # if i < len(self.atom_connections) - 1:
-            #     output += "-"
         return output
 
     def find_ligands(self, atom):
@@ -111,28 +108,27 @@ class LigandExtractor:
             # Here LigandExtract assumes we are looking at a monodentate, but we need to deal with bonds that will connect again
             # during the process
             bond_str = str(a.GetIndex()+1) + "-" + str(self.mol.atoms[bond.GetNbrAtomIdx(a) - 1].idx)
-            # print("LigExtract: ", bond_str)
             if bond.GetId() == 0:
-                # print("Unvisited")
                 bond.SetId(1)
 
                 if self.mol.atoms[bond.GetNbrAtomIdx(a) - 1].OBAtom.IsMetal():
-                    # print("Metal found, skipping...")
-
                     # if atom is connected to metal AND has not been marked as a metal connection yet
                     if a.GetId() < 3:
                         a.SetId(3)
                         self.atom_connections.append(a.GetAtomicNum())
-                        # print("Atom type: ", a.GetType())
                     
                     continue
                 else:
                     self.find_ligands(self.mol.atoms[bond.GetNbrAtomIdx(a) - 1])
             else:
-                # print("already visited")
                 pass
             
-                
+    def getCSDid(self, file_path):
+        with open(file_path, 'r') as file:
+            content = file.read()
+            index = content.find('CSD_code = ') + 11 
+            csd_id = content[index:index+6]
+            return csd_id
 
     def extract_ligand(self):
         print("Enter extract_ligand...")
@@ -154,8 +150,7 @@ class LigandExtractor:
                         self.atom_connections.append(self.mol.atoms[bond.GetNbrAtomIdx(atom.OBAtom) - 1].atomicnum)
 
                         # break
-
-
+                    
                         # Change the atom to a carbon
                         # self.mol.atoms[bond.GetNbrAtomIdx(atom.OBAtom) - 1].OBAtom.SetAtomicNum(6)
                         #
@@ -165,13 +160,8 @@ class LigandExtractor:
                     counter += 1
 
         for atom in self.mol:
-            # print(atom.OBAtom.GetId())
             if atom.OBAtom.GetId() < 2:
                 self.mol.OBMol.DeleteAtom(atom.OBAtom)
-                # print("Atom removed")
-            # if atom.OBAtom.GetId() == 0:
-            #     self.mol.OBMol.DeleteAtom(atom.OBAtom)
-            #     print("Atom removed")
 
         # This is after the ligand gets deleted because when they get deleted the indexes of the atoms change
 
@@ -180,8 +170,6 @@ class LigandExtractor:
             if atom.OBAtom.GetId() == 3:
                 # self.start_index = atom.OBAtom.GetIndex() + 1
                 self.connecting_indices.append(atom.OBAtom.GetIndex() + 1)
-                # atom_contact = atom.atomicnum
-                # print(self.start_index)
 
         # This chunk of code sorts the files into folders based on what their charges are - kept here for future
         # testing needs
@@ -213,26 +201,21 @@ class LigandExtractor:
         #     self.mol.write("xyz", f"Charges/Other/{self.type}{self.num_atom}-{self.bond_iter}-After.xyz",
         #                    True)
 
-        # print(self.convert_connections())
-
-        # print(self.connecting_indices)
         connecting_atoms = self.convert_connections()
 
-        print("Writing ligand to file type xyz...")
-
-        # if not os.path.exists('Traceback'):
-        #     os.makedirs('Traceback')
+        if not os.path.exists('ExtractedLigand'):
+            os.makedirs('ExtractedLigand')
 
         if not self.denticity in dentate_map.keys():
             self.dentate_name = "TetrasAndGreater"
         else:
             self.dentate_name = dentate_map[self.denticity]
 
-        if not os.path.exists(f'{self.dentate_name}'):
-            os.makedirs(f'{self.dentate_name}')
+        if not os.path.exists(f'ExtractedLigand/{self.dentate_name}'):
+            os.makedirs(f'ExtractedLigand/{self.dentate_name}')
         
-        if not os.path.exists(f'{self.dentate_name}/{connecting_atoms}'):
-            os.makedirs(f'{self.dentate_name}/{connecting_atoms}')
+        if not os.path.exists(f'ExtractedLigand/{self.dentate_name}/{connecting_atoms}'):
+            os.makedirs(f'ExtractedLigand/{self.dentate_name}/{connecting_atoms}')
 
 
         # self.mol.write("xyz", f"ExtractedLigand/{self.dentate_name}/{connecting_atoms}/{self.type}{self.num_atom}-{self.bond_iter}.xyz", True)
@@ -253,18 +236,27 @@ class LigandExtractor:
         #     os.makedirs('UpdatedCharge/mol')
 
         print("Writing ligand to file type mol...")
-        mol_file_path = f"{self.dentate_name}/{connecting_atoms}/{self.type}{self.num_atom}-{self.bond_iter}.mol2"
+        mol_file_path = f"ExtractedLigand/{self.dentate_name}/{connecting_atoms}/{self.type}{self.num_atom}-{self.bond_iter}.mol2"
 
         self.mol.write("mol2", mol_file_path, True)
         print("Wrote successfully")
 
         # rename file using new format: 
-        # CSDid_CenterMetal_num(# of ligand from compound)_CoordinationNum_CoordinationAtoms
         # get CSDid
+        csd_id = self.getCSDid(mol_file_path)
+        # get center metal
         center_metal_symbol = atomic_nums_to_elem[self.center_metal]
         # get ligand num as str() from self
+        ligand_num = str(self.ligand_num)
         # get coordination num from len() of connecting_atoms
-        coordination_num = len(self.atom_connections)
+        coordination_num = str(len(self.atom_connections))
+        # coordination atoms we already have
+        new_file_name = f'ExtractedLigand/{self.dentate_name}/{connecting_atoms}/'
+        new_file_name += csd_id + '_' + center_metal_symbol + '_' + \
+                        ligand_num + '_' + coordination_num + '_'+ connecting_atoms + '.mol2'
+        
+        print("renaming file to ", new_file_name)
+        os.rename(mol_file_path, new_file_name)
 
         # file_smile = f"UpdatedCharge/smile/{self.type}{self.num_atom}-{self.bond_iter}.smi"
         # self.mol.write("smi", file_smile, True)
